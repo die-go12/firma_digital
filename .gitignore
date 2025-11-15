@@ -1,0 +1,17 @@
+# Entorno virtual
+firma_venv/
+
+# Caché de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de base de datos locales (opcional)
+# db/firma_digital.db
+
+# VS Code
+.vscode/
+
+# Otros archivos temporales
+*.log
