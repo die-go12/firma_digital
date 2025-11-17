@@ -12,7 +12,7 @@ Implementar el módulo de generación de llaves y firma de documentos PDF, inclu
 1. Abrir PowerShell en la carpeta del proyecto:
 
    ```
-   C:\Users\vilma\OneDrive\Documentos\firma_persona1
+   C:\Users\luis\OneDrive\Documentos\firma_persona1
    ```
 
 2. Crear un entorno virtual y activarlo:
