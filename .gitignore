@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Base de Datos
+*.db
+*.sqlite3
+sql_app.db
+
+# Archivos de Seguridad
+*.pem
+*.key
+*.crt
+
+# Archivos Generados / Storage 
+storage/keys/*
+storage/certs/*
+storage/signed_pdfs/*
+storage/temp/*
+!storage/**/.gitkeep
+
+# Archivos de Sistema 
+.DS_Store
+Thumbs.db

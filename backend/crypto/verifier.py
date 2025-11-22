@@ -1,47 +1,36 @@
-from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
-from PyPDF2 import PdfReader
-import json
-import os
-import base64
+from Crypto.PublicKey import RSA
 
-class Verificador:
-
-    def __init__(self, certs_path="storage/certs"):
-        self.certs_path = certs_path
-
-    def cargar_certificado(self, usuario):
-        cert_file = os.path.join(self.certs_path, f"{usuario}_cert.json")
-
-        if not os.path.exists(cert_file):
-            raise FileNotFoundError(f"Certificado no encontrado: {cert_file}")
-
-        with open(cert_file, "r") as f:
-            return json.load(f)
-
-    def obtener_public_key(self, usuario):
-        cert = self.cargar_certificado(usuario)
-        key_pem = cert["public_key"]
-        return RSA.import_key(key_pem.encode())
-
-    def extraer_contenido_pdf(self, pdf_path):
-        reader = PdfReader(pdf_path)
-        contenido = b"".join(
-            page.extract_text().encode("utf-8")
-            for page in reader.pages
-            if page.extract_text()
-        )
-        return contenido
-
-    def verificar_pdf(self, pdf_path, firma, usuario):
-        public_key = self.obtener_public_key(usuario)
-
-        contenido = self.extraer_contenido_pdf(pdf_path)
-        h = SHA256.new(contenido)
-
-        try:
-            pkcs1_15.new(public_key).verify(h, firma)
-            return True
-        except Exception:
-            return False
+def verify_signature_bytes(pdf_bytes: bytes, signature_bytes: bytes, public_key_bytes: bytes) -> bool:
+    """
+    Verifica criptográficamente si una firma corresponde a un PDF y a un usuario.
+    
+    Args:
+        pdf_bytes (bytes): El contenido binario del archivo original.
+        signature_bytes (bytes): El contenido binario de la firma (.bin).
+        public_key_bytes (bytes): La llave pública del usuario (sacada de la BD).
+        
+    Returns:
+        bool: True si es válida, False si no.
+    """
+    try:
+        # 1. Importar la llave pública (que viene de la Base de Datos)
+        public_key = RSA.import_key(public_key_bytes)
+        
+        # 2. Calcular el Hash del PDF original que nos están enviando
+        # IMPORTANTE: Hasheamos el archivo entero, no solo el texto.
+        h = SHA256.new(pdf_bytes)
+        
+        # 3. Verificar la firma contra ese Hash
+        # Si la firma no coincide, esta función lanza una excepción (ValueError)
+        pkcs1_15.new(public_key).verify(h, signature_bytes)
+        
+        return True
+        
+    except (ValueError, TypeError):
+        # Esto ocurre si la firma es falsa o el documento fue alterado
+        return False
+    except Exception as e:
+        print(f"Error inesperado en verificación: {e}")
+        return False
