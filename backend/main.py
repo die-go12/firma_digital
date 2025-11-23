@@ -1,18 +1,29 @@
 import os
 import shutil
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 # IMPORTACIONES DE LA ARQUITECTURA
 from backend.db import database
 from backend.models import models, schemas
-# Importamos TODOS los módulos de criptografia
+# Importamos TODOS los módulos de criptografía
 from backend.crypto import keygen, signer, ca, verifier
 
-# Inicializar Base de Datos (Crea el archivo sql_app.db si no existe)
+# Inicializar Base de Datos
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(title="Sistema de Firma Digital - Equipo Cripto")
+
+# CONFIGURACIÓN DE SEGURIDAD (CORS)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Rutas de almacenamiento
 STORAGE_PDF_PATH = "storage/signed_pdfs"
@@ -33,8 +44,9 @@ def root():
     return {"mensaje": "API Activa. Sistema listo para operar."}
 
 
-# 1. GESTIÓN DE USUARIOS (Generación de Llaves)
-
+# ==========================================
+# 1. GESTIÓN DE USUARIOS (Generación de Llaves Segura)
+# ==========================================
 @app.post("/usuarios/", response_model=schemas.UsuarioOut)
 def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db)):
     # Verificar duplicados
@@ -44,7 +56,8 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
 
     # GENERAR LLAVES (Llamada a keygen.py)
     try:
-        priv, pub = keygen.generate_keys_bytes()
+        # ✅ CAMBIO SEGURIDAD: Pasamos el email para usarlo como SAL
+        priv, pub = keygen.generate_keys_bytes(usuario.email)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generando llaves: {e}")
 
@@ -61,15 +74,16 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db))
     return nuevo_usuario
 
 
-# 2. FIRMA DE DOCUMENTOS (Usa DB y guarda .bin)
-
+# ==========================================
+# 2. FIRMA DE DOCUMENTOS (Desencriptado Seguro)
+# ==========================================
 @app.post("/firmar-pdf/")
 async def firmar_documento(
     usuario_id: int = Form(...),
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    # Buscar usuario y su llave privada
+    # Buscar usuario
     usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -79,7 +93,8 @@ async def firmar_documento(
 
     # FIRMAR (Llamada a signer.py)
     try:
-        firma_digital = signer.sign_pdf_bytes(contenido_pdf, usuario.private_key)
+        # ✅ CAMBIO SEGURIDAD: Pasamos el email para poder desencriptar la llave privada
+        firma_digital = signer.sign_pdf_bytes(contenido_pdf, usuario.private_key, usuario.email)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error firmando: {e}")
 
@@ -87,12 +102,11 @@ async def firmar_documento(
     nombre_pdf = f"firmado_{usuario.nombre}_{archivo.filename}"
     ruta_pdf = os.path.join(STORAGE_PDF_PATH, nombre_pdf)
     
-    await archivo.seek(0) # Regresar el cursor al inicio
+    await archivo.seek(0)
     with open(ruta_pdf, "wb") as buffer:
         shutil.copyfileobj(archivo.file, buffer)
 
-    # B. Guardar archivo de FIRMA (.bin) para pruebas manuales
-    # Esto te permitirá probar el endpoint de verificar luego
+    # B. Guardar archivo de FIRMA (.bin)
     nombre_firma = f"{nombre_pdf}.bin"
     ruta_firma = os.path.join(STORAGE_PDF_PATH, nombre_firma)
     with open(ruta_firma, "wb") as f:
@@ -110,17 +124,18 @@ async def firmar_documento(
     db.commit()
     db.refresh(nuevo_doc)
 
-    return {
-        "status": "Firmado correctamente",
-        "documento_id": nuevo_doc.id,
-        "ruta_pdf": ruta_pdf,
-        "ruta_firma_debug": ruta_firma, # Te devolvemos esta ruta para que sepas cual subir al verificador
-        "mensaje": "Se generó el PDF y un archivo .bin con la firma suelta."
-    }
+    # Devolver archivo .bin para descarga directa
+    return FileResponse(
+        path=ruta_firma, 
+        filename=nombre_firma, 
+        media_type='application/octet-stream'
+    )
 
 
+# ==========================================
 # 3. VERIFICACIÓN DE FIRMAS (El Juez)
-
+# ==========================================
+# (Este no cambia porque usa la llave PÚBLICA, que no se encripta)
 @app.post("/verificar-firma/")
 async def verificar_firma(
     usuario_id: int = Form(...),
@@ -128,19 +143,13 @@ async def verificar_firma(
     archivo_firma: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """
-    Sube el PDF original + el archivo .bin generado anteriormente.
-    """
-    # Buscar la llave pública del supuesto firmante
     usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
     if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario (presunto firmante) no encontrado")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    # Leer archivos en memoria
     pdf_bytes = await archivo_original.read()
     firma_bytes = await archivo_firma.read()
 
-    # Verificar matemáticamente
     es_valida = verifier.verify_signature_bytes(
         pdf_bytes=pdf_bytes,
         signature_bytes=firma_bytes,
@@ -153,8 +162,9 @@ async def verificar_firma(
         return {"resultado": "INVALIDO", "detalle": "La firma NO corresponde o el documento fue modificado."}
 
 
-# 4. CERTIFICADOS (Integración con CA)
-
+# ==========================================
+# 4. CERTIFICADOS
+# ==========================================
 @app.post("/emitir-certificado/")
 def emitir_certificado_usuario(usuario_id: int, db: Session = Depends(get_db)):
     usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
@@ -166,7 +176,6 @@ def emitir_certificado_usuario(usuario_id: int, db: Session = Depends(get_db)):
         pub_key_str = usuario.public_key.decode('utf-8')
         cert = autoridad.emitir_certificado(usuario.nombre, pub_key_str)
         
-        # Opcional: Guardar copia del JSON en disco
         ruta_json = os.path.join(CERTS_PATH, f"{usuario.nombre}_cert.json")
         import json
         with open(ruta_json, "w") as f:

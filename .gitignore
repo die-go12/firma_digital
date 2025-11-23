@@ -1,26 +1,52 @@
-# Python
+# ---  Python & Entorno Virtual ---
 __pycache__/
 *.py[cod]
+*$py.class
 venv/
+.venv/
+env/
 .env
 
-# Base de Datos
+# ---  IDEs & Configuración Personal ---
+.vscode/
+.idea/
+*.swp
+
+# ---  Base de Datos (¡CRÍTICO!) ---
 *.db
 *.sqlite3
 sql_app.db
 
-# Archivos de Seguridad
+# ---  Seguridad & Llaves (¡NUNCA SUBIR!) ---
 *.pem
 *.key
 *.crt
+*.pub
+# Por seguridad, ignoramos cualquier archivo que parezca una llave
+private_key*
+public_key*
 
-# Archivos Generados / Storage 
+# ---  Archivos Generados (Firmas y PDFs) ---
+*.log
+*.bin
+*.pdf
+# Excepción: Si tienes un PDF de documentación manual, puedes forzarlo con git add -f
+
+# ---  Storage (Mantener estructura, ignorar contenido) ---
+# Ignoramos todo el contenido dentro de las carpetas...
 storage/keys/*
 storage/certs/*
 storage/signed_pdfs/*
 storage/temp/*
-!storage/**/.gitkeep
 
-# Archivos de Sistema 
+# ...Pero mantenemos el archivo .gitkeep para que Git suba la carpeta vacía
+!storage/keys/.gitkeep
+!storage/certs/.gitkeep
+!storage/signed_pdfs/.gitkeep
+!storage/temp/.gitkeep
+
+# ---  Basura del Sistema Operativo ---
 .DS_Store
 Thumbs.db
+ehthumbs.db
+desktop.ini

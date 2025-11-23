@@ -1,23 +1,43 @@
 from Crypto.PublicKey import RSA
+from Crypto.Hash import SHA256
+from backend.config import PIMIENTA_SECRETA
 
-def generate_keys_bytes():
+def _derivar_password_unico(email_usuario: str) -> str:
     """
-    Genera un par de claves RSA (Privada y Pública).
-    Retorna:
-        Tuple(bytes, bytes): (clave_privada, clave_publica)
-    No guarda archivos en disco, solo devuelve los datos crudos.
+    Mezcla: SAL (Email) + PIMIENTA (Config)
+    Retorna: Un hash SHA256 único para usar como contraseña de encriptación.
+    """
+    combinacion = email_usuario + PIMIENTA_SECRETA
+    h = SHA256.new(combinacion.encode())
+    return h.hexdigest()
+
+def generate_keys_bytes(email_usuario: str): 
+    """
+    Genera llaves RSA.
+    La llave privada se devuelve ENCRIPTADA (protegida con contraseña).
     """
     key = RSA.generate(2048)
     
-    # Exportamos a formato PEM (bytes)
-    private_key = key.export_key()
+    # 1. Calculamos la contraseña única de este usuario
+    password_unico = _derivar_password_unico(email_usuario)
+    
+    # 2. Exportamos la llave privada ENCRIPTADA
+    # 'scryptAndAES128-CBC' es el estándar moderno de seguridad.
+    # Sin la contraseña (que depende del email y la pimienta), estos bytes son basura.
+    private_key_encrypted = key.export_key(
+        format='PEM', 
+        passphrase=password_unico, 
+        pkcs=8, 
+        protection="scryptAndAES128-CBC"
+    )
+    
     public_key = key.publickey().export_key()
     
-    return private_key, public_key
+    return private_key_encrypted, public_key
 
-
-if __name__ == "__main__":
-    print("Probando generación de llaves...")
-    priv, pub = generate_keys_bytes()
-    print(f"Llave privada generada ({len(priv)} bytes)")
+if __name__ == "_main_":
+    print("Probando generación segura...")
+    # Prueba dummy
+    priv, pub = generate_keys_bytes("test@demo.com")
+    print(f"Llave privada ENCRIPTADA generada ({len(priv)} bytes)")
     print(f"Llave pública generada ({len(pub)} bytes)")
